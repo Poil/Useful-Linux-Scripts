@@ -3,14 +3,23 @@
 import os
 import re
 import sys
+import socket
+import commands
 
+# START OF CONFIG
 binarypath = "/usr/sbin/megacli"
+nscapath ="/usr/sbin/send_nsca"
+nagioshost="192.168.229.4"
+nscacfg="/etc/send_nsca.cfg"
+alarmname='raid'
+# END OF CONFIG
 
 if len(sys.argv) > 2:
-	print 'Usage: megaclisas-status [--nagios]'
-	sys.exit(1)
+    print 'Usage: megaclisas-status [--nagios] [--nsca]'
+    sys.exit(1)
 
 nagiosmode=False
+nscamode=False
 nagiosoutput=''
 nagiosgoodarray=0
 nagiosbadarray=0
@@ -19,115 +28,153 @@ nagiosbaddisk=0
 
 # Check command line arguments to enable nagios or not
 if len(sys.argv) > 1:
-	if sys.argv[1] == '--nagios':
-		nagiosmode=True
-	else:
-		print 'Usage: megaclisas-status [--nagios]'
-		sys.exit(1)
+    if sys.argv[1] == '--nagios':
+        nagiosmode=True
+    elif sys.argv[1] == '--nsca':
+        nscamode=True
+    else:
+        print 'Usage: megaclisas-status [--nagios] [--nsca]'
+        sys.exit(1)
 
 # Check binary exists (and +x), if not print an error message
 # or return UNKNOWN nagios error code
 if os.path.exists(binarypath) and os.access(binarypath, os.X_OK):
-	pass
+    pass
 else:
-	if nagiosmode:
-		print 'UNKNOWN - Cannot find '+binarypath
-	else:
-		print 'Cannot find '+binarypath+'. Please install it.'
-	sys.exit(3)
+    if nagiosmode:
+        print 'UNKNOWN - Cannot find '+binarypath
+    else:
+        print 'Cannot find '+binarypath+'. Please install it.'
+    sys.exit(3)
+
+if nscamode == True:
+    if os.path.exists(nscapath) and os.access(nscapath, os.X_OK):
+        nscacmd = ("%s -H %s -c %s -d ';'" % (nscapath, nagioshost, nscacfg))
+        if socket.gethostname().find('.')>=0:
+            hostname=socket.gethostname().split('.')[0]
+        else:
+            hostname=socket.gethostname()
+        pass
+    else:
+        print 'Cannot find '+nscapath+'. Please install it.'
+        sys.exit(3)
+
 
 # Get command output
 def getOutput(cmd):
-	output = os.popen(cmd)
-	lines = []
-	for line in output:
-		if not re.match(r'^$',line.strip()):
-			lines.append(line.strip())
-	return lines
+    output = os.popen(cmd)
+    lines = []
+    for line in output:
+        if not re.match(r'^$',line.strip()):
+            lines.append(line.strip())
+    return lines
 
 def returnControllerNumber(output):
-	for line in output:
-		if re.match(r'^Controller Count.*$',line.strip()):
-			return int(line.split(':')[1].strip().strip('.'))
+    for line in output:
+        if re.match(r'^Controller Count.*$',line.strip()):
+            return int(line.split(':')[1].strip().strip('.'))
 
 def returnControllerModel(output):
-	for line in output:
-		if re.match(r'^Product Name.*$',line.strip()):
-			return line.split(':')[1].strip()
+    for line in output:
+        if re.match(r'^Product Name.*$',line.strip()):
+            return line.split(':')[1].strip()
 
 def returnArrayNumber(output):
-	i = 0
-	for line in output:
-		if re.match(r'^Number of Virtual (Disk|Drive).*$',line.strip()):
-			i = line.strip().split(':')[1].strip()
-	return i
+    i = 0
+    for line in output:
+        if re.match(r'^Number of Virtual (Disk|Drive).*$',line.strip()):
+            i = line.strip().split(':')[1].strip()
+    return i
+
+def returnBBUInfo(output):
+    bbuvoltage = ""
+    bbutemp = ""
+    bbumissing = ""
+    bburplrq = ""
+    bbuovertemp = ""
+    bbuoverchg = ""
+        
+    for line in output:
+        if re.match(r'^Voltage.*$',line.strip()):
+            bbuvoltage = line.strip().split(':')[1].strip()
+        if re.match(r'^Temperature.*$',line.strip()):
+            bbutemp = line.strip().split(':')[1].strip()
+        if re.match(r'^Battery Pack Missing.*$',line.strip()):
+            bbumissing = line.strip().split(':')[1].strip()
+        if re.match(r'^Battery Replacement required.*$',line.strip()):
+            bburplrq = line.strip().split(':')[1].strip()
+        if re.match(r'^Over Temperature.*$',line.strip()):
+            bbuovertemp = line.strip().split(':')[1].strip()
+        if re.match(r'^Over Charged.*$',line.strip()):
+            bbuoverchg = line.strip().split(':')[1].strip()
+    return [bbuvoltage, bbutemp, bbumissing, bburplrq, bbuovertemp, bbuoverchg]
 
 def returnArrayInfo(output,controllerid,arrayid):
-	id = 'c'+str(controllerid)+'u'+str(arrayid)
-	operationlinennumber = False
-	linenumber = 0
+    id = 'c'+str(controllerid)+'u'+str(arrayid)
+    operationlinennumber = False
+    linenumber = 0
 
-	for line in output:
-		if re.match(r'Number Of Drives\s*((per span))?:.*[0-9]+$',line.strip()):
-			ldpdcount = line.split(':')[1].strip()
-		if re.match(r'Span Depth *:.*[0-9]+$',line.strip()):
-			spandepth = line.split(':')[1].strip()
-		if re.match(r'^RAID Level\s*:.*$',line.strip()):
-			raidlevel = line.strip().split(':')[1].split(',')[0].split('-')[1].strip()
-			type = 'RAID' + raidlevel
-		if re.match(r'^Size\s*:.*$',line.strip()):
-			# Size reported in MB
-			if re.match(r'^.*MB$',line.strip().split(':')[1]):
-				size = line.strip().split(':')[1].strip('MB').strip()
-				size = str(int(round((float(size) / 1000))))+'G'
-			# Size reported in TB
-			elif re.match(r'^.*TB$',line.strip().split(':')[1]):
-				size = line.strip().split(':')[1].strip('TB').strip()
-				size = str(int(round((float(size) * 1000))))+'G'
-			# Size reported in GB (default)
-			else:
-				size = line.strip().split(':')[1].strip('GB').strip()
-				size = str(int(round((float(size)))))+'G'
-		if re.match(r'^State\s*:.*$',line.strip()):
-			state = line.strip().split(':')[1].strip()
-		if re.match(r'^Ongoing Progresses\s*:.*$',line.strip()):
-			operationlinennumber = linenumber
-		linenumber += 1
-		if operationlinennumber:
-			inprogress = output[operationlinennumber+1]
-		else:
-			inprogress = 'None'
+    for line in output:
+        if re.match(r'Number Of Drives\s*((per span))?:.*[0-9]+$',line.strip()):
+            ldpdcount = line.split(':')[1].strip()
+        if re.match(r'Span Depth *:.*[0-9]+$',line.strip()):
+            spandepth = line.split(':')[1].strip()
+        if re.match(r'^RAID Level\s*:.*$',line.strip()):
+            raidlevel = line.strip().split(':')[1].split(',')[0].split('-')[1].strip()
+            type = 'RAID' + raidlevel
+        if re.match(r'^Size\s*:.*$',line.strip()):
+            # Size reported in MB
+            if re.match(r'^.*MB$',line.strip().split(':')[1]):
+                size = line.strip().split(':')[1].strip('MB').strip()
+                size = str(int(round((float(size) / 1000))))+'G'
+            # Size reported in TB
+            elif re.match(r'^.*TB$',line.strip().split(':')[1]):
+                size = line.strip().split(':')[1].strip('TB').strip()
+                size = str(int(round((float(size) * 1000))))+'G'
+            # Size reported in GB (default)
+            else:
+                size = line.strip().split(':')[1].strip('GB').strip()
+                size = str(int(round((float(size)))))+'G'
+        if re.match(r'^State\s*:.*$',line.strip()):
+            state = line.strip().split(':')[1].strip()
+        if re.match(r'^Ongoing Progresses\s*:.*$',line.strip()):
+            operationlinennumber = linenumber
+        linenumber += 1
+        if operationlinennumber:
+            inprogress = output[operationlinennumber+1]
+        else:
+            inprogress = 'None'
 
-	if ldpdcount and (int(spandepth) > 1):
-		ldpdcount = int(ldpdcount) * int(spandepth)
-		if int(raidlevel) < 10:
-			type = type + "0"
+    if ldpdcount and (int(spandepth) > 1):
+        ldpdcount = int(ldpdcount) * int(spandepth)
+        if int(raidlevel) < 10:
+            type = type + "0"
 
-	return [id,type,size,state,inprogress]
+    return [id,type,size,state,inprogress]
 
 def returnDiskInfo(output,controllerid):
-	arrayid = False
-	diskid = False
-	table = []
-	state = 'undef'
-	model = 'undef'
-	for line in output:
-		if re.match(r'^Virtual (Disk|Drive): [0-9]+.*$',line.strip()):
-			arrayid = line.split('(')[0].split(':')[1].strip()
-		if re.match(r'Firmware state: .*$',line.strip()):
-			state = line.split(':')[1].strip()
-		if re.match(r'Inquiry Data: .*$',line.strip()):
-			model = line.split(':')[1].strip()
-			model = re.sub(' +', ' ', model)
-		if re.match(r'PD: [0-9]+ Information.*$',line.strip()):
-			diskid = line.split()[1].strip()
+    arrayid = False
+    diskid = False
+    table = []
+    state = 'undef'
+    model = 'undef'
+    for line in output:
+        if re.match(r'^Virtual (Disk|Drive): [0-9]+.*$',line.strip()):
+            arrayid = line.split('(')[0].split(':')[1].strip()
+        if re.match(r'Firmware state: .*$',line.strip()):
+            state = line.split(':')[1].strip()
+        if re.match(r'Inquiry Data: .*$',line.strip()):
+            model = line.split(':')[1].strip()
+            model = re.sub(' +', ' ', model)
+        if re.match(r'PD: [0-9]+ Information.*$',line.strip()):
+            diskid = line.split()[1].strip()
 
-		if arrayid != False and state != 'undef' and model != 'undef' and diskid != False:
-			table.append([str(arrayid), str(diskid), state, model])
-			state = 'undef'
-			model = 'undef'
+        if arrayid != False and state != 'undef' and model != 'undef' and diskid != False:
+            table.append([str(arrayid), str(diskid), state, model])
+            state = 'undef'
+            model = 'undef'
 
-	return table
+    return table
 
 cmd = binarypath+' -adpCount -NoLog'
 output = getOutput(cmd)
@@ -136,73 +183,124 @@ controllernumber = returnControllerNumber(output)
 bad = False
 
 # List available controller
-if not nagiosmode:
-	print '-- Controller informations --'
-	print '-- ID | Model'
-	controllerid = 0
-	while controllerid < controllernumber:
-		cmd = binarypath+' -AdpAllInfo -a'+str(controllerid)+' -NoLog'
-		output = getOutput(cmd)
-		controllermodel = returnControllerModel(output)
-		print 'c'+str(controllerid)+' | '+controllermodel
-		controllerid += 1
-	print ''
+if not nagiosmode and not nscamode:
+    print '-- Controller informations --'
+    print '-- %4s | %5s ' % ('ID','Model')
+    controllerid = 0
+    while controllerid < controllernumber:
+        cmd = binarypath+' -AdpAllInfo -a'+str(controllerid)+' -NoLog'
+        output = getOutput(cmd)
+        controllermodel = returnControllerModel(output)
+        print '%7s | %s ' % ('c'+str(controllerid),controllermodel)
+        controllerid += 1
+    print ''
 
-controllerid = 0
-if not nagiosmode:
-	print '-- Arrays informations --'
-	print '-- ID | Type | Size | Status | InProgress'
+# List BBU controller
+if not nagiosmode and not nscamode:
+    print '-- BBU informations --'
+    print '-- %4s | %7s | %11s | %7s | %20s | %16s | %12s ' % ('ID','Voltage','Temperature','Missing','Replacement Required','Over Temperature','Over Charged')
 
-while controllerid < controllernumber:
-	arrayid = 0
-	cmd = binarypath+' -LdGetNum -a'+str(controllerid)+' -NoLog'
-	output = getOutput(cmd)
-	arraynumber = returnArrayNumber(output)
-	while arrayid < int(arraynumber):
-		cmd = binarypath+' -LDInfo -l'+str(arrayid)+' -a'+str(controllerid)+' -NoLog'
-		output = getOutput(cmd)
-		arrayinfo = returnArrayInfo(output,controllerid,arrayid)
-		if not nagiosmode:
-			print arrayinfo[0]+' | '+arrayinfo[1]+' | '+arrayinfo[2]+' | '+arrayinfo[3]+' | '+arrayinfo[4]
-		if not arrayinfo[3] == 'Optimal':
-			bad = True
-			nagiosbadarray=nagiosbadarray+1
-		else:
-			nagiosgoodarray=nagiosgoodarray+1
-		arrayid += 1
-	controllerid += 1
-if not nagiosmode:
-	print ''
-
-if not nagiosmode:
-	print '-- Disks informations'
-	print '-- ID | Model | Status'
-
+bbumsg=""
 controllerid = 0
 while controllerid < controllernumber:
-	arrayid = 0
-	cmd = binarypath+' -LDInfo -lall -a'+str(controllerid)+' -NoLog'
-	output = getOutput(cmd)
-	cmd = binarypath+' -LdPdInfo -a'+str(controllerid)+' -NoLog'
-	output = getOutput(cmd)
-	arraydisk = returnDiskInfo(output,controllerid)
-	for array in arraydisk:
-		if not array[2] == 'Online' and not array[2] == 'Online, Spun Up':
-			bad=True
-			nagiosbaddisk=nagiosbaddisk+1
-		else:
-			nagiosgooddisk=nagiosgooddisk+1
-		if not nagiosmode:
-			print 'c'+str(controllerid)+'u'+array[0]+'p'+array[1]+' | '+array[3]+' | '+array[2]
-	controllerid += 1
+    cmd = binarypath+' -AdpBbuCmd -a'+str(controllerid)+' -NoLog'
+    output = getOutput(cmd)
+    bbustatus = returnBBUInfo(output)
+    if not nagiosmode and not nscamode:
+        print '%7s | %7s | %11s | %7s | %20s | %16s | %12s ' % ('c'+str(controllerid),bbustatus[0],bbustatus[1],bbustatus[2],bbustatus[3],bbustatus[4],bbustatus[5])
+
+    if bbustatus[0] != 'OK':
+        bbumsg+='Voltage: '+bbustatus[0]+', '
+        bad=True
+    if bbustatus[1] != 'OK':
+        bbumsg+='Temperature: '+bbustatus[1]+', '
+        bad=True
+    if bbustatus[2] != 'OK':
+        bbumsg+='Missing: '+bbustatus[2]+', '
+        bad=True
+    if bbustatus[3] != 'OK':
+        bbumsg+='Replacement Rq: '+bbustatus[3]+', '
+        bad=True
+    if bbustatus[4] != 'OK':
+        bbumsg+='Over Temperature: '+bbustatus[4]+', '
+        bad=True
+    if bbustatus[5] != 'OK':
+        bbumsg+='Over Charged: '+bbustatus[5]+', '
+        bad=True
+
+    bbumsg=bbumsg[:-2]
+    controllerid += 1
+
+if not nagiosmode and not nscamode:
+    print ''
+
+
+controllerid = 0
+if not nagiosmode and not nscamode:
+    print '-- Arrays informations --'
+    print '-- %4s | %6s | %6s | %8s | %11s' % ('ID','Type','Size','Status','InProgress')
+
+while controllerid < controllernumber:
+    arrayid = 0
+    cmd = binarypath+' -LdGetNum -a'+str(controllerid)+' -NoLog'
+    output = getOutput(cmd)
+    arraynumber = returnArrayNumber(output)
+    while arrayid < int(arraynumber):
+        cmd = binarypath+' -LDInfo -l'+str(arrayid)+' -a'+str(controllerid)+' -NoLog'
+        output = getOutput(cmd)
+        arrayinfo = returnArrayInfo(output,controllerid,arrayid)
+        if not nagiosmode and not nscamode:
+            print ' %6s | %6s | %6s | %8s | %11s' % ( arrayinfo[0],arrayinfo[1],arrayinfo[2],arrayinfo[3],arrayinfo[4])
+        if not arrayinfo[3] == 'Optimal':
+            bad = True
+            nagiosbadarray=nagiosbadarray+1
+        else:
+            nagiosgoodarray=nagiosgoodarray+1
+        arrayid += 1
+    controllerid += 1
+if not nagiosmode and not nscamode:
+    print ''
+
+if not nagiosmode and not nscamode:
+    print '-- Disks informations'
+    print '-- %4s | %20s | %8s' % ('ID','Status','Model')
+
+controllerid = 0
+while controllerid < controllernumber:
+    arrayid = 0
+    cmd = binarypath+' -LDInfo -lall -a'+str(controllerid)+' -NoLog'
+    output = getOutput(cmd)
+    cmd = binarypath+' -LdPdInfo -a'+str(controllerid)+' -NoLog'
+    output = getOutput(cmd)
+    arraydisk = returnDiskInfo(output,controllerid)
+    for array in arraydisk:
+        if not array[2] == 'Online' and not array[2] == 'Online, Spun Up':
+            bad=True
+            nagiosbaddisk=nagiosbaddisk+1
+        else:
+            nagiosgooddisk=nagiosgooddisk+1
+        if not nagiosmode and not nscamode:
+            print ' %6s | %20s | %s' % ( 'c'+str(controllerid)+'u'+array[0]+'p'+array[1],array[2],array[3])
+    controllerid += 1
 
 if nagiosmode:
-	if bad:
-		print 'RAID ERROR - Arrays: OK:'+str(nagiosgoodarray)+' Bad:'+str(nagiosbadarray)+' - Disks: OK:'+str(nagiosgooddisk)+' Bad:'+str(nagiosbaddisk)
-		sys.exit(2)
-	else:
-		print 'RAID OK - Arrays: OK:'+str(nagiosgoodarray)+' Bad:'+str(nagiosbadarray)+' - Disks: OK:'+str(nagiosgooddisk)+' Bad:'+str(nagiosbaddisk)
+    if bad:
+        print 'RAID ERROR - Arrays: OK:'+str(nagiosgoodarray)+' Bad:'+str(nagiosbadarray)+' - Disks: OK:'+str(nagiosgooddisk)+' Bad:'+str(nagiosbaddisk) + ' - BBU: '+ bbumsg
+        sys.exit(2)
+    else:
+        print 'RAID OK - Arrays: OK:'+str(nagiosgoodarray)+' Bad:'+str(nagiosbadarray)+' - Disks: OK:'+str(nagiosgooddisk)+' Bad:'+str(nagiosbaddisk) + ' - BBU: '+ bbumsg
+elif nscamode:
+    if bad:
+        output='RAID ERROR - Arrays: OK:'+str(nagiosgoodarray)+' Bad:'+str(nagiosbadarray)+' - Disks: OK:'+str(nagiosgooddisk)+' Bad:'+str(nagiosbaddisk) + ' - BBU: '+ bbumsg
+        msg=("'%s;%s;%s;%s\n'" % (hostname, alarmname, 1, output))
+        status = commands.getstatusoutput('echo %s | %s' % (msg, nscacmd))
+        sys.exit(status)
+    else:
+        output='RAID OK - Arrays: OK:'+str(nagiosgoodarray)+' Bad:'+str(nagiosbadarray)+' - Disks: OK:'+str(nagiosgooddisk)+' Bad:'+str(nagiosbaddisk) + ' - BBU: '+ bbumsg
+        msg=("'%s;%s;%s;%s\n'" % (hostname, alarmname, 0, output))
+        status = commands.getstatusoutput('echo %s | %s' % (msg, nscacmd))
+        sys.exit(status)
 else:
-	if bad:
-		print '\nThere is at least one disk/array in a NOT OPTIMAL state.'
-		sys.exit(1)
+    if bad:
+        print '\nThere is at least one disk/array/bbu in a NOT OPTIMAL state.'
+        sys.exit(1)
