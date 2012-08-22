@@ -3,25 +3,16 @@
 import os
 import re
 import sys
-import commands
-import socket
 
-# START OF CONFIG
 binarypath = "/usr/sbin/arcconf"
-nscapath ="/usr/bin/send_nsca"
-nagioshost="192.168.229.4"
-nscacfg="/etc/icinga/send_nsca.cfg"
-alarmname='raid'
-# END OF CONFIG
 
 if len(sys.argv) > 2:
-    print 'Usage: aacraid-status [-d] [--nagios] [--nsca]'
+    print 'Usage: aacraid-status [-d] [--nagios]'
     sys.exit(1)
 
 printarray = True
 printcontroller = True
 nagiosmode=False
-nscamode=False
 nagiosoutput=''
 nagiosgoodarray=0
 nagiosbadarray=0
@@ -39,35 +30,20 @@ if len(sys.argv) > 1:
         printcontroller = False
     elif sys.argv[1] == '--nagios':
         nagiosmode=True
-    elif sys.argv[1] == '--nsca':
-        nscamode=True
     else:
-        print 'Usage: aacraid-status [-d] [--nagios] [--nsca]'
+        print 'Usage: aacraid-status [-d] [--nagios]'
         sys.exit(1)
 
 # Check binary exists (and +x), if not print an error message
 # or return UNKNOWN nagios error code
 if os.path.exists(binarypath) and os.access(binarypath, os.X_OK):
-    pass
-else:
-    if nagiosmode:
-        print 'UNKNOWN - Cannot find '+binarypath
-    else:
-        print 'Cannot find '+binarypath+'. Please install it.'
-    sys.exit(3)
-
-if nscamode == True:
-    if os.path.exists(nscapath) and os.access(nscapath, os.X_OK):
-        nscacmd = ("%s -H %s -c %s -d ';'" % (nscapath, nagioshost, nscacfg))
-        if socket.gethostname().find('.')>=0:
-            hostname=socket.gethostname().split('.')[0]
-        else:
-            hostname=socket.gethostname()
         pass
-    else:
-        print 'Cannot find '+nscapath+'. Please install it.'
+else:
+        if nagiosmode:
+                print 'UNKNOWN - Cannot find '+binarypath
+        else:
+                print 'Cannot find '+binarypath+'. Please install it.'
         sys.exit(3)
-
 
 
 # Get command output
@@ -112,7 +88,7 @@ def returnArrayIds(output):
             ids.append(line.strip('Logical device number').strip())
     return ids
 
-def returnArrayInfo(output,controllerid):
+def returnArrayInfo(output):
     members = []
     for line in output:
         # RAID level may be either N or Simple_Volume
@@ -146,12 +122,11 @@ def returnArrayInfo(output,controllerid):
                 members.append('?,?')
             else:
                 members.append(splitter.split(line)[1].strip('(').strip(')'))
-        if re.match(r'^Stripe order \(Channel,Device\)\s+: .*$',line.strip()):
-            line = line.split(':')[1]
-            tmpmembers = line.split()
-            for mem in tmpmembers:
-               members.append(str(controllerid)+','+mem)
-
+        #if re.match(r'^Stripe order \(Channel,Device\)\s+: .*$',line.strip()):
+            #line = line.split(':')[1]
+            #members = (line.split())
+        #if len(members)==0:
+            #members.append('0,0')
     return [type,status,size,members]
 
 def returnControllerTasks(output):
@@ -198,81 +173,66 @@ def returnDisksInfo(output,controllerid):
             state = False
     return disks
 
-cmd = binarypath+' GETVERSION'
+cmd = '/usr/sbin/arcconf GETVERSION'
 output = getOutput(cmd)
 controllernumber = returnControllerNumber(output)
 
 # List controllers
 if printcontroller :
+    if not nagiosmode:
+        print '-- Controller informations --'
+        print '-- ID | Model | Ctrl Status | BBU Status'
+
     controllerid = 1
     while controllerid <= controllernumber:
-        cmd = binarypath +' GETCONFIG '+str(controllerid)+' AD'
+        cmd = '/usr/sbin/arcconf GETCONFIG '+str(controllerid)+' AD'
         output = getOutput(cmd)
         controllermodel = returnControllerModel(output)
         controllerstatus = returnControllerStatus(output)
 	bbustatus  = returnBBUStatus(output)
-        if controllerid == 1:
-            if not nagiosmode and not nscamode:
-                print '-- Controller informations --'
-                if bbustatus[0] != 'Not Installed':
-                    print '-- %2s | %24s | %12s | %10s' % ('ID','Model','Ctrl Status','BBU Status')
-                else:
-                    print '-- %2s | %24s | %12s' % ('ID','Model','Ctrl Status')
-
         if controllerstatus != 'Optimal' and controllerstatus != 'Okay':
             bad = True
             nagiosbadarray=nagiosbadarray+1
         else:
             nagiosgoodarray=nagiosgoodarray+1
 
-        if bbustatus[0] != 'Not Installed':
-            if bbustatus[0] != 'Optimal' and bbustatus[0] != 'Okay' and bbustatus[1] != 'No' :
-                badBBU = True
-                bad = True
-                nagiosbadbbu=nagiosbadbbu+1
-            else:
-                nagiosgoodbbu=nagiosgoodbbu+1
+        if bbustatus[0] != 'Optimal' and bbustatus[0] != 'Okay' and bbustatus[1] != 'No' :
+            badBBU = True
+            bad = True
+            nagiosbadbbu=nagiosbadbbu+1
+        else:
+            nagiosgoodbbu=nagiosgoodbbu+1
         
-            if badBBU == True :
-                BBUstatus = "Bad"
-            else :
-                BBUstatus = "Okay"
+        if badBBU == True :
+           BBUstatus = "Bad"
+        else :
+           BBUstatus = "Okay"
 
-        if not nagiosmode and not nscamode:
-            if bbustatus[0] != 'Not Installed':
-                print '%5s | %24s | %12s | %10s' % ('c'+str(controllerid-1),controllermodel,controllerstatus,BBUstatus)
-            else:
-                print '%5s | %24s | %12s' % ('c'+str(controllerid-1),controllermodel,controllerstatus)
-        
+        if not nagiosmode:
+           print 'c'+str(controllerid-1)+' | '+controllermodel+' | '+controllerstatus+ ' | '+BBUstatus
         controllerid += 1
-
-    if bbustatus[0] != 'Not Installed':
-       bbumsg=' - BBU : '+BBUstatus
-    else:
-       bbumsg=''
-
-    if not nagiosmode and not nscamode:
+    if not nagiosmode:
         print ''
+
 
 # List arrays
 if printarray:
     controllerid = 1
-    if not nagiosmode and not nscamode:
+    if not nagiosmode:
         print '-- Arrays informations --'
-        print '-- %2s | %6s | %6s | %8s | %10s | %4s' % ('ID','Type','Size','Status','Task','Progress')
-        #print '-- ID | Type | Size | Status | Task | Progress'
+        print '-- ID | Type | Size | Status | Task | Progress'
     while controllerid <= controllernumber:
         arrayid = 0
-        cmd = binarypath +' GETCONFIG '+str(controllerid)
+        cmd = '/usr/sbin/arcconf GETCONFIG '+str(controllerid)
         output = getOutput(cmd)
         arrayids = returnArrayIds(output)
         for arrayid in arrayids:
-            cmd = binarypath +' GETCONFIG '+str(controllerid)+' LD '+str(arrayid)
+            cmd = '/usr/sbin/arcconf GETCONFIG '+str(controllerid)+' LD '+str(arrayid)
             output = getOutput(cmd)
-            arrayinfo = returnArrayInfo(output,controllerid)
+            arrayinfo = returnArrayInfo(output)
             if arrayinfo[1] != 'Optimal' and arrayinfo[1] != 'Okay':
                 bad = True
-            cmd = binarypath +' GETSTATUS '+str(controllerid)
+            cmd = '/usr/sbin/arcconf GETSTATUS '+str(controllerid)
             output = getOutput(cmd)
             tasksinfo = returnControllerTasks(output)
             done = False
@@ -285,32 +245,32 @@ if printarray:
                 raidtype = arrayinfo[0]
             for tasks in tasksinfo:
                 if int(tasks[0]) == int(arrayid):
-                    if not nagiosmode and not nscamode:
-                        print '%5s | %6s | %6s | %8s | %10s | %4s' % ('c'+str(controllerid-1)+'u'+str(arrayid),raidtype,arrayinfo[2],arrayinfo[1],tasks[1],tasks[2]+'%')
+                    if not nagiosmode:
+                        print 'c'+str(controllerid-1)+'u'+str(arrayid)+' | '+raidtype+' | '+arrayinfo[2]+'G | '+arrayinfo[1]+' | '+tasks[1]+' | '+tasks[2]+'%'
                     done = True
                     break
             if done == False:
-                if not nagiosmode and not nscamode:
-                    print '%5s | %6s | %6s | %8s | %10s | %4s' % ('c'+str(controllerid-1)+'u'+str(arrayid),raidtype,arrayinfo[2],arrayinfo[1],'','')
+                if not nagiosmode:
+                    print 'c'+str(controllerid-1)+'u'+str(arrayid)+' | '+raidtype+' | '+arrayinfo[2]+'G | '+arrayinfo[1]
         controllerid += 1
-    if not nagiosmode and not nscamode:
+    if not nagiosmode:
         print ''
 
 # List disks
 controllerid = 1
-if not nagiosmode and not nscamode:
+if not nagiosmode:
     print '-- Disks informations'
-    print '-- %3s | %8s | %20s' % ('ID','Status','Model')
+    print '-- ID | Model | Status'
 while controllerid <= controllernumber:
     arrayid = 0
-    cmd = binarypath +' GETCONFIG '+str(controllerid)
+    cmd = '/usr/sbin/arcconf GETCONFIG '+str(controllerid)
     output = getOutput(cmd)
     arrayids = returnArrayIds(output)
     for arrayid in arrayids:
-        cmd = binarypath +' GETCONFIG '+str(controllerid)+' LD '+str(arrayid)
+        cmd = '/usr/sbin/arcconf GETCONFIG '+str(controllerid)+' LD '+str(arrayid)
         output = getOutput(cmd)
-        arrayinfo = returnArrayInfo(output,controllerid)
-        cmd = binarypath +' GETCONFIG '+str(controllerid)+' PD'
+        arrayinfo = returnArrayInfo(output)
+        cmd = '/usr/sbin/arcconf GETCONFIG '+str(controllerid)+' PD'
         output = getOutput(cmd)
         diskinfo = returnDisksInfo(output,controllerid)
         if len(arrayinfo[3])>0:
@@ -323,40 +283,29 @@ while controllerid <= controllernumber:
                     else:
                         nagiosgooddisk=nagiosgooddisk+1
                     if disk[0] == member:
-                        if not nagiosmode and not nscamode:
-                            print '%6s | %8s | %s' % ('c'+str(controllerid-1)+'u'+str(arrayid)+'d'+str(i),disk[1],disk[2]+' '+disk[3])
+                        if not nagiosmode:
+                            print 'c'+str(controllerid-1)+'u'+str(arrayid)+'d'+str(i)+' | '+disk[2]+' '+disk[3]+' | '+disk[1]
                     i += 1
-        #else:
-        #    i = 0
-        #    for disk in diskinfo:
-        #        if disk[1] != 'Online' and disk[1] != 'Hot Spare' and disk[1] != 'Ready':
-        #            nagiosbaddisk=nagiosbaddisk+1
-        #            bad = True
-        #        else:
-        #            nagiosgooddisk=nagiosgooddisk+1
-        #        if not nagiosmode and not nscamode:
-        #            print '%6s | %8s | %s' % ('c'+str(controllerid-1)+'u'+str(arrayid)+'d'+str(i),disk[1],disk[2]+' '+disk[3])
-        #        i += 1
+        else:
+            for disk in diskinfo:
+                i = 0
+                if disk[1] != 'Online' and disk[1] != 'Hot Spare' and disk[1] != 'Ready':
+                    nagiosbaddisk=nagiosbaddisk+1
+                    bad = True
+                else:
+                    nagiosgooddisk=nagiosgooddisk+1
+                if not nagiosmode:
+                    print 'c'+str(controllerid-1)+'u'+str(arrayid)+'d'+str(i)+' | '+disk[2]+' '+disk[3]+' | '+disk[1]
+                i += 1
     controllerid += 1
 
 
 if nagiosmode:
     if bad:
-        print 'RAID ERROR - Arrays: OK:'+str(nagiosgoodarray)+' Bad:'+str(nagiosbadarray)+' - Disks: OK:'+str(nagiosgooddisk)+' Bad:'+str(nagiosbaddisk) + bbumsg
+        print 'RAID ERROR - Arrays: OK:'+str(nagiosgoodarray)+' Bad:'+str(nagiosbadarray)+' - Disks: OK:'+str(nagiosgooddisk)+' Bad:'+str(nagiosbaddisk)+' - BBU: '+ BBUstatus
         sys.exit(2)
     else:
-        print 'RAID OK - Arrays: OK:'+str(nagiosgoodarray)+' Bad:'+str(nagiosbadarray)+' - Disks: OK:'+str(nagiosgooddisk)+' Bad:'+str(nagiosbaddisk) + bbumsg
-elif nscamode:
-    if bad:
-        output='RAID ERROR - Arrays: OK:'+str(nagiosgoodarray)+' Bad:'+str(nagiosbadarray)+' - Disks: OK:'+str(nagiosgooddisk)+' Bad:'+str(nagiosbaddisk) + bbumsg
-        msg=("'%s;%s;%s;%s\n'" % (hostname, alarmname, 1, output))
-        status = commands.getstatusoutput('echo %s | %s' % (msg, nscacmd))
-        sys.exit(status)
-    else:
-        output='RAID OK - Arrays: OK:'+str(nagiosgoodarray)+' Bad:'+str(nagiosbadarray)+' - Disks: OK:'+str(nagiosgooddisk)+' Bad:'+str(nagiosbaddisk) + bbumsg
-        msg=("'%s;%s;%s;%s\n'" % (hostname, alarmname, 0, output))
-        status = commands.getstatusoutput('echo %s | %s' % (msg, nscacmd))
-        sys.exit(status)
+        print 'RAID OK - Arrays: OK:'+str(nagiosgoodarray)+' Bad:'+str(nagiosbadarray)+' - Disks: OK:'+str(nagiosgooddisk)+' Bad:'+str(nagiosbaddisk)+' - BBU: '+ BBUstatus
 else:
     if bad:
         print '\nThere is at least one disk/array in a NOT OPTIMAL state.'
