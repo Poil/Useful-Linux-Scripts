@@ -7,7 +7,7 @@ import socket
 import commands
 
 # START OF CONFIG
-binarypath = "/usr/sbin/megacli"
+binarypath = "/opt/MegaRAID/MegaCli/MegaCli64"
 nscapath ="/usr/sbin/send_nsca"
 nagioshost="192.168.229.4"
 nscacfg="/etc/send_nsca.cfg"
@@ -87,6 +87,7 @@ def returnArrayNumber(output):
     return i
 
 def returnBBUInfo(output):
+    bbustate = ""
     bbuvoltage = ""
     bbutemp = ""
     bbumissing = ""
@@ -95,6 +96,8 @@ def returnBBUInfo(output):
     bbuoverchg = ""
         
     for line in output:
+        if re.match(r'^Battery State.*$',line.strip()):
+            bbustate = line.strip().split(':')[1].strip()
         if re.match(r'^Voltage.*$',line.strip()):
             bbuvoltage = line.strip().split(':')[1].strip()
         if re.match(r'^Temperature.*$',line.strip()):
@@ -107,7 +110,7 @@ def returnBBUInfo(output):
             bbuovertemp = line.strip().split(':')[1].strip()
         if re.match(r'^Over Charged.*$',line.strip()):
             bbuoverchg = line.strip().split(':')[1].strip()
-    return [bbuvoltage, bbutemp, bbumissing, bburplrq, bbuovertemp, bbuoverchg]
+    return [bbustate, bbuvoltage, bbutemp, bbumissing, bburplrq, bbuovertemp, bbuoverchg]
 
 def returnArrayInfo(output,controllerid,arrayid):
     id = 'c'+str(controllerid)+'u'+str(arrayid)
@@ -198,7 +201,7 @@ if not nagiosmode and not nscamode:
 # List BBU controller
 if not nagiosmode and not nscamode:
     print '-- BBU informations --'
-    print '-- %4s | %7s | %11s | %7s | %20s | %16s | %12s ' % ('ID','Voltage','Temperature','Missing','Replacement Required','Over Temperature','Over Charged')
+    print '-- %4s | %18s | %7s | %11s | %7s | %20s | %16s | %12s ' % ('ID','Status','Voltage','Temperature','Missing','Replacement Required','Over Temperature','Over Charged')
 
 bbumsg=""
 controllerid = 0
@@ -207,24 +210,27 @@ while controllerid < controllernumber:
     output = getOutput(cmd)
     bbustatus = returnBBUInfo(output)
     if not nagiosmode and not nscamode:
-        print '%7s | %7s | %11s | %7s | %20s | %16s | %12s ' % ('c'+str(controllerid),bbustatus[0],bbustatus[1],bbustatus[2],bbustatus[3],bbustatus[4],bbustatus[5])
+        print '%7s | %18s  | %7s | %11s | %7s | %20s | %16s | %12s ' % ('c'+str(controllerid),bbustatus[0],bbustatus[1],bbustatus[2],bbustatus[3],bbustatus[4],bbustatus[5],bbustatus[6])
 
-    if bbustatus[0] != 'OK':
-        bbumsg+='Voltage: '+bbustatus[0]+', '
+    if bbustatus[0] != 'Operational':
+        bbumsg+='Status: '+bbustatus[0]+', '
         bad=True
     if bbustatus[1] != 'OK':
-        bbumsg+='Temperature: '+bbustatus[1]+', '
+        bbumsg+='Voltage: '+bbustatus[0]+', '
         bad=True
     if bbustatus[2] != 'OK':
+        bbumsg+='Temperature: '+bbustatus[1]+', '
+        bad=True
+    if bbustatus[3] != 'No':
         bbumsg+='Missing: '+bbustatus[2]+', '
         bad=True
-    if bbustatus[3] != 'OK':
+    if bbustatus[4] != 'No':
         bbumsg+='Replacement Rq: '+bbustatus[3]+', '
         bad=True
-    if bbustatus[4] != 'OK':
+    if bbustatus[5] != 'No':
         bbumsg+='Over Temperature: '+bbustatus[4]+', '
         bad=True
-    if bbustatus[5] != 'OK':
+    if bbustatus[6] != 'No':
         bbumsg+='Over Charged: '+bbustatus[5]+', '
         bad=True
 
