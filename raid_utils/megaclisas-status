@@ -7,8 +7,8 @@ import socket
 import commands
 
 # START OF CONFIG
-binarypath = "/opt/MegaRAID/MegaCli/MegaCli64"
-nscapath ="/usr/sbin/send_nsca"
+binarypath="/usr/sbin/megacli"
+nscapath="/usr/sbin/send_nsca"
 nagioshost="192.168.229.4"
 nscacfg="/etc/send_nsca.cfg"
 alarmname='raid'
@@ -87,15 +87,17 @@ def returnArrayNumber(output):
     return i
 
 def returnBBUInfo(output):
-    bbustate = ""
-    bbuvoltage = ""
-    bbutemp = ""
-    bbumissing = ""
-    bburplrq = ""
-    bbuovertemp = ""
-    bbuoverchg = ""
+    bbustate = "Ok"
+    bbuvoltage = "Ok"
+    bbutemp = "Ok"
+    bbumissing = "No"
+    bburplrq = "No"
+    bbuovertemp = "No"
+    bbuoverchg = "No"
         
     for line in output:
+        if re.match(r'BatteryType',line.strip()):
+            bbutype =  line.strip().split(':')[1].strip()
         if re.match(r'^Battery State.*$',line.strip()):
             bbustate = line.strip().split(':')[1].strip()
         if re.match(r'^Voltage.*$',line.strip()):
@@ -110,7 +112,10 @@ def returnBBUInfo(output):
             bbuovertemp = line.strip().split(':')[1].strip()
         if re.match(r'^Over Charged.*$',line.strip()):
             bbuoverchg = line.strip().split(':')[1].strip()
-    return [bbustate, bbuvoltage, bbutemp, bbumissing, bburplrq, bbuovertemp, bbuoverchg]
+        if re.match(r'^Learn Cycle Active.*$',line.strip()):
+            if line.strip().split(':')[1].strip() == "Yes":
+                bbustate = 'Learning in progress'
+    return {'type': bbutype, 'state':bbustate, 'voltage':bbuvoltage, 'temp':bbutemp, 'missing':bbumissing, 'rplrq':bburplrq, 'overtemp':bbuovertemp, 'overchg':bbuoverchg}
 
 def returnArrayInfo(output,controllerid,arrayid):
     id = 'c'+str(controllerid)+'u'+str(arrayid)
@@ -153,7 +158,7 @@ def returnArrayInfo(output,controllerid,arrayid):
         if int(raidlevel) < 10:
             type = type + "0"
 
-    return [id,type,size,state,inprogress]
+    return {'id':id, 'type':type, 'size':size, 'state':state, 'inprogress':inprogress}
 
 def returnDiskInfo(output,controllerid):
     arrayid = False
@@ -184,6 +189,7 @@ output = getOutput(cmd)
 controllernumber = returnControllerNumber(output)
 
 bad = False
+critical = False
 
 # List available controller
 if not nagiosmode and not nscamode:
@@ -201,7 +207,7 @@ if not nagiosmode and not nscamode:
 # List BBU controller
 if not nagiosmode and not nscamode:
     print '-- BBU informations --'
-    print '-- %4s | %18s | %7s | %11s | %7s | %20s | %16s | %12s ' % ('ID','Status','Voltage','Temperature','Missing','Replacement Required','Over Temperature','Over Charged')
+    print '-- %4s | %21s | %7s | %11s | %7s | %20s | %16s | %12s ' % ('ID','Status','Voltage','Temperature','Missing','Replacement Required','Over Temperature','Over Charged')
 
 bbumsg=""
 controllerid = 0
@@ -210,36 +216,36 @@ while controllerid < controllernumber:
     output = getOutput(cmd)
     bbustatus = returnBBUInfo(output)
     if not nagiosmode and not nscamode:
-        print '%7s | %18s  | %7s | %11s | %7s | %20s | %16s | %12s ' % ('c'+str(controllerid),bbustatus[0],bbustatus[1],bbustatus[2],bbustatus[3],bbustatus[4],bbustatus[5],bbustatus[6])
+        print '%7s | %21s | %7s | %11s | %7s | %20s | %16s | %12s ' % ('c'+str(controllerid),bbustatus['state'],bbustatus['voltage'],bbustatus['temp'],bbustatus['missing'],bbustatus['rplrq'],bbustatus['overtemp'],bbustatus['overchg'])
 
-    if bbustatus[0] != 'Operational':
-        bbumsg+='Status: '+bbustatus[0]+', '
-        bad=True
-    if bbustatus[1] != 'OK':
-        bbumsg+='Voltage: '+bbustatus[0]+', '
-        bad=True
-    if bbustatus[2] != 'OK':
-        bbumsg+='Temperature: '+bbustatus[1]+', '
-        bad=True
-    if bbustatus[3] != 'No':
-        bbumsg+='Missing: '+bbustatus[2]+', '
-        bad=True
-    if bbustatus[4] != 'No':
-        bbumsg+='Replacement Rq: '+bbustatus[3]+', '
-        bad=True
-    if bbustatus[5] != 'No':
-        bbumsg+='Over Temperature: '+bbustatus[4]+', '
-        bad=True
-    if bbustatus[6] != 'No':
-        bbumsg+='Over Charged: '+bbustatus[5]+', '
-        bad=True
+    bbumsg+='Status: '+bbustatus['state']+', '
+    bbumsg+='Voltage: '+bbustatus['voltage']+', '
+    bbumsg+='Temperature: '+bbustatus['temp']+', '
+    bbumsg+='Missing: '+bbustatus['missing']+', '
+    bbumsg+='Replacement Rq: '+bbustatus['rplrq']+', '
+    bbumsg+='Over Temperature: '+bbustatus['overtemp']+', '
+    bbumsg+='Over Charged: '+bbustatus['overchg']
 
-    bbumsg=bbumsg[:-2]
+    if bbustatus['type'] in ['iBBU08','iBBU']:
+        if bbustatus['state'] != 'Operational':
+            bad=True
+        if bbustatus['voltage'] != 'OK':
+            bad=True
+        if bbustatus['temp'] != 'OK':
+            bad=True
+        if bbustatus['missing'] != 'No':
+            bad=True
+        if bbustatus['rplrq'] != 'No':
+            bad=True
+        if bbustatus['overtemp'] != 'No':
+            bad=True
+        if bbustatus['overchg'] != 'No':
+            bad=True
+
     controllerid += 1
 
 if not nagiosmode and not nscamode:
     print ''
-
 
 controllerid = 0
 if not nagiosmode and not nscamode:
@@ -256,14 +262,16 @@ while controllerid < controllernumber:
         output = getOutput(cmd)
         arrayinfo = returnArrayInfo(output,controllerid,arrayid)
         if not nagiosmode and not nscamode:
-            print ' %6s | %6s | %6s | %8s | %11s' % ( arrayinfo[0],arrayinfo[1],arrayinfo[2],arrayinfo[3],arrayinfo[4])
-        if not arrayinfo[3] == 'Optimal':
+            print ' %6s | %6s | %6s | %8s | %11s' % ( arrayinfo['id'],arrayinfo['type'],arrayinfo['size'],arrayinfo['state'],arrayinfo['inprogress'])
+        if not arrayinfo['state'] == 'Optimal':
             bad = True
+            critical = True
             nagiosbadarray=nagiosbadarray+1
         else:
             nagiosgoodarray=nagiosgoodarray+1
         arrayid += 1
     controllerid += 1
+
 if not nagiosmode and not nscamode:
     print ''
 
@@ -282,6 +290,7 @@ while controllerid < controllernumber:
     for array in arraydisk:
         if not array[2] == 'Online' and not array[2] == 'Online, Spun Up':
             bad=True
+            critical=True
             nagiosbaddisk=nagiosbaddisk+1
         else:
             nagiosgooddisk=nagiosgooddisk+1
@@ -289,24 +298,31 @@ while controllerid < controllernumber:
             print ' %6s | %20s | %s' % ( 'c'+str(controllerid)+'u'+array[0]+'p'+array[1],array[2],array[3])
     controllerid += 1
 
+if bad:
+   returncode=1
+   if critical:
+      returncode=2
+else:
+   returncode=0
+
 if nagiosmode:
     if bad:
         print 'RAID ERROR - Arrays: OK:'+str(nagiosgoodarray)+' Bad:'+str(nagiosbadarray)+' - Disks: OK:'+str(nagiosgooddisk)+' Bad:'+str(nagiosbaddisk) + ' - BBU: '+ bbumsg
-        sys.exit(2)
+        sys.exit(returncode)
     else:
         print 'RAID OK - Arrays: OK:'+str(nagiosgoodarray)+' Bad:'+str(nagiosbadarray)+' - Disks: OK:'+str(nagiosgooddisk)+' Bad:'+str(nagiosbaddisk) + ' - BBU: '+ bbumsg
 elif nscamode:
     if bad:
         output='RAID ERROR - Arrays: OK:'+str(nagiosgoodarray)+' Bad:'+str(nagiosbadarray)+' - Disks: OK:'+str(nagiosgooddisk)+' Bad:'+str(nagiosbaddisk) + ' - BBU: '+ bbumsg
-        msg=("'%s;%s;%s;%s\n'" % (hostname, alarmname, 1, output))
+        msg=("'%s;%s;%s;%s\n'" % (hostname, alarmname, returncode, output))
         status = commands.getstatusoutput('echo %s | %s' % (msg, nscacmd))
-        sys.exit(status)
+        sys.exit(0)
     else:
         output='RAID OK - Arrays: OK:'+str(nagiosgoodarray)+' Bad:'+str(nagiosbadarray)+' - Disks: OK:'+str(nagiosgooddisk)+' Bad:'+str(nagiosbaddisk) + ' - BBU: '+ bbumsg
         msg=("'%s;%s;%s;%s\n'" % (hostname, alarmname, 0, output))
         status = commands.getstatusoutput('echo %s | %s' % (msg, nscacmd))
-        sys.exit(status)
+        sys.exit(0)
 else:
     if bad:
         print '\nThere is at least one disk/array/bbu in a NOT OPTIMAL state.'
-        sys.exit(1)
+        sys.exit(returncode)
