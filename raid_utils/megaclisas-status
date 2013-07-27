@@ -87,35 +87,41 @@ def returnArrayNumber(output):
     return i
 
 def returnBBUInfo(output):
-    bbustate = "Ok"
-    bbuvoltage = "Ok"
-    bbutemp = "Ok"
-    bbumissing = "No"
-    bburplrq = "No"
-    bbuovertemp = "No"
-    bbuoverchg = "No"
-        
+    bbutype = None
+    bbustate = "Unknown"
+    bbuvoltage = "Unknown"
+    bbutemp = "Unknown"
+    bbumissing = "Unknown"
+    bburplrq = "Unknown"
+    bbuovertemp = "Unknown"
+    bbuoverchg = "Unknown"
+
     for line in output:
-        if re.match(r'BatteryType',line.strip()):
+        if re.match(r'^BatteryType\s*:\s*.+$',line.strip()):
             bbutype =  line.strip().split(':')[1].strip()
-        if re.match(r'^Battery State.*$',line.strip()):
+        if re.match(r'^Battery State\s*:\s*.+$',line.strip()):
             bbustate = line.strip().split(':')[1].strip()
-        if re.match(r'^Voltage.*$',line.strip()):
+        # One line says Voltage: OK, another one Voltage: NNNN mV
+        if re.match(r'^Voltage\s*:\s*.+$',line.strip()) and not re.match(r'^.*[0-9]+ mV$',line.strip()):
             bbuvoltage = line.strip().split(':')[1].strip()
-        if re.match(r'^Temperature.*$',line.strip()):
+        # Same issue as Voltage
+        if re.match(r'^Temperature\s*:\s*.+$',line.strip()) and not re.match(r'^.*[0-9]+ C$',line.strip()):
             bbutemp = line.strip().split(':')[1].strip()
-        if re.match(r'^Battery Pack Missing.*$',line.strip()):
+        if re.match(r'^Battery Pack Missing\s*:\s*.+$',line.strip()):
             bbumissing = line.strip().split(':')[1].strip()
-        if re.match(r'^Battery Replacement required.*$',line.strip()):
+        if re.match(r'^Battery Replacement required\s*:\s*.+$',line.strip()):
             bburplrq = line.strip().split(':')[1].strip()
-        if re.match(r'^Over Temperature.*$',line.strip()):
+        if re.match(r'^Over Temperature\s*:\s*.+$',line.strip()):
             bbuovertemp = line.strip().split(':')[1].strip()
-        if re.match(r'^Over Charged.*$',line.strip()):
+        if re.match(r'^Over Charged\s*:\s*.+$$',line.strip()):
             bbuoverchg = line.strip().split(':')[1].strip()
-        if re.match(r'^Learn Cycle Active.*$',line.strip()):
+        if re.match(r'^Learn Cycle Active\s*:\s*.+$',line.strip()):
             if line.strip().split(':')[1].strip() == "Yes":
                 bbustate = 'Learning in progress'
-    return {'type': bbutype, 'state':bbustate, 'voltage':bbuvoltage, 'temp':bbutemp, 'missing':bbumissing, 'rplrq':bburplrq, 'overtemp':bbuovertemp, 'overchg':bbuoverchg}
+    if bbutype:
+        return {'type': bbutype, 'state':bbustate, 'voltage':bbuvoltage, 'temp':bbutemp, 'missing':bbumissing, 'rplrq':bburplrq, 'overtemp':bbuovertemp, 'overchg':bbuoverchg}
+    else:
+        return None
 
 def returnArrayInfo(output,controllerid,arrayid):
     id = 'c'+str(controllerid)+'u'+str(arrayid)
@@ -215,18 +221,20 @@ while controllerid < controllernumber:
     cmd = binarypath+' -AdpBbuCmd -a'+str(controllerid)+' -NoLog'
     output = getOutput(cmd)
     bbustatus = returnBBUInfo(output)
-    if not nagiosmode and not nscamode:
-        print '%7s | %21s | %7s | %11s | %7s | %20s | %16s | %12s ' % ('c'+str(controllerid),bbustatus['state'],bbustatus['voltage'],bbustatus['temp'],bbustatus['missing'],bbustatus['rplrq'],bbustatus['overtemp'],bbustatus['overchg'])
+    
+    # None returned if no BBU found
+    if bbustatus:
+        if not nagiosmode and not nscamode:
+            print '%7s | %21s | %7s | %11s | %7s | %20s | %16s | %12s ' % ('c'+str(controllerid)+'b0',bbustatus['state'],bbustatus['voltage'],bbustatus['temp'],bbustatus['missing'],bbustatus['rplrq'],bbustatus['overtemp'],bbustatus['overchg'])
 
-    bbumsg+='Status: '+bbustatus['state']+', '
-    bbumsg+='Voltage: '+bbustatus['voltage']+', '
-    bbumsg+='Temperature: '+bbustatus['temp']+', '
-    bbumsg+='Missing: '+bbustatus['missing']+', '
-    bbumsg+='Replacement Rq: '+bbustatus['rplrq']+', '
-    bbumsg+='Over Temperature: '+bbustatus['overtemp']+', '
-    bbumsg+='Over Charged: '+bbustatus['overchg']
+        bbumsg+='Status: '+bbustatus['state']+', '
+        bbumsg+='Voltage: '+bbustatus['voltage']+', '
+        bbumsg+='Temperature: '+bbustatus['temp']+', '
+        bbumsg+='Missing: '+bbustatus['missing']+', '
+        bbumsg+='Replacement Rq: '+bbustatus['rplrq']+', '
+        bbumsg+='Over Temperature: '+bbustatus['overtemp']+', '
+        bbumsg+='Over Charged: '+bbustatus['overchg']
 
-    if bbustatus['type'] in ['iBBU08','iBBU']:
         if bbustatus['state'] != 'Operational':
             bad=True
         if bbustatus['voltage'] != 'OK':
@@ -288,7 +296,7 @@ while controllerid < controllernumber:
     output = getOutput(cmd)
     arraydisk = returnDiskInfo(output,controllerid)
     for array in arraydisk:
-        if not array[2] == 'Online' and not array[2] == 'Online, Spun Up':
+        if not array[2] in ['Online', 'Online, Spun Up', 'Online, Spun down']:
             bad=True
             critical=True
             nagiosbaddisk=nagiosbaddisk+1
