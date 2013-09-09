@@ -39,6 +39,7 @@ alarmname='raid'
 c_status_re = re.compile('^\s*Controller Status\s*:\s*(.*)$')
 l_status_re = re.compile('^\s*Status of logical device\s*:\s*(.*)$')
 l_device_re = re.compile('^Logical device number ([0-9]+).*$')
+l_name_re = re.compile('^\s*Logical device name\s*:\s*(.*)$')
 c_defunct_re = re.compile('^\s*Defunct disk drive count\s:\s*([0-9]+).*$')
 c_degraded_re = re.compile('^\s*Logical devices/Failed/Degraded\s*:\s*([0-9]+)/([0-9]+)/([0-9]+).*$')
 b_status_re = re.compile('^\s*Status\s*:\s*(.*)$')
@@ -81,6 +82,7 @@ else:
 
 cstatus = lstatus = ldevice = cdefunct = cdegraded = bstatus = btemp = bcapacity = btime = ""
 lnum = ""
+lname = ""
 check_status = 0
 nagios_result = ""
 
@@ -91,11 +93,16 @@ for line in os.popen4(binarypath+" GETCONFIG 1 LD")[1].readlines():
 		lnum = ldevice.group(1)
 		continue
 
+	l_name = l_name_re.match(line)
+	if l_name:
+		lname = "\"" + l_name.group(1) + "\" "
+		continue
+
 	lstatus = l_status_re.match(line)
 	if lstatus:
 		if lstatus.group(1) != "Optimal":
 			check_status = 2
-		nagios_result += "Logical Device " + lnum + " " + lstatus.group(1) + ", "
+		nagios_result += "Logical Device " + lnum + " " + lname + lstatus.group(1) + ", "
 
 for line in os.popen4(binarypath+" GETCONFIG 1 AD")[1].readlines():
 	# Match the regexs
