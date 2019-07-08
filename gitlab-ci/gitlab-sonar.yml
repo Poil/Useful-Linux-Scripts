@@ -1,0 +1,136 @@
+---
+env_prep:
+  extends: .job_before_debian
+  image: python:3.6
+  stage: env_prep
+  allow_failure: false
+  script:
+    - tox -e py36
+  tags:
+    - docker
+  except:
+    refs:
+      - tags
+
+python36:
+  extends: .job_before_debian
+  image: python:3.6
+  stage: unit_testing
+  allow_failure: false
+  artifacts:
+    paths:
+      - .coverage
+      - coverage-reports/
+      - xunit-reports/
+    when: always
+  script:
+    - mkdir -p ${CI_PROJECT_DIR}/{xunit-reports,coverage-reports}
+    - >
+      tox -e coverage --
+      --cov
+      --cov-report=xml:coverage-reports/coverage-${CI_PROJECT_NAMESPACE/\//_}_${CI_PROJECT_NAME}.xml
+      --cov-report=term
+      --junit-xml=xunit-reports/xunit-result-${CI_PROJECT_NAMESPACE/\//_}_${CI_PROJECT_NAME}.xml
+  tags:
+    - docker
+  except:
+    refs:
+      - tags
+
+flake8:
+  extends: .job_before_debian
+  image: python:3.6
+  stage: code_quality
+  script: tox -e flake8
+  allow_failure: true
+  tags:
+    - tlssnr
+    - docker
+  except:
+    refs:
+      - tags
+
+flake8_tests:
+  extends: .job_before_debian
+  image: python:3.6
+  stage: code_quality
+  script: tox -e flake8_tests
+  allow_failure: true
+  tags:
+    - docker
+  except:
+    refs:
+      - tags
+
+pylint:
+  extends: .job_before_debian
+  image: python:3.6
+  stage: code_quality
+  script:
+    - pip install pipenv
+    - mkdir -p ${CI_PROJECT_DIR}/pylint-reports
+    - pipenv run tox -e pylint
+  artifacts:
+    paths:
+      - pylint-reports
+    when: always
+  allow_failure: true
+  tags:
+    - docker
+  except:
+    refs:
+      - tags
+
+bandit:
+  extends: .job_before_debian
+  image: python:3.6
+  stage: security_analysis
+  script:
+    - mkdir -p ${CI_PROJECT_DIR}/bandit-reports
+    - tox -e bandit
+  artifacts:
+    paths:
+      - bandit-reports
+    when: always
+  allow_failure: true
+  tags:
+    - docker
+  except:
+    refs:
+      - tags
+
+sonarqube:
+  cache: {}
+  except:
+    refs:
+      - dev
+      - master
+      - tags
+  stage: reporting
+  script:
+    - sed -i "s#/builds/${CI_PROJECT_PATH}#${CI_PROJECT_DIR}#g" ${CI_PROJECT_DIR}/coverage-reports/coverage-*.xml
+    - >
+      /opt/sonar-scanner/bin/sonar-scanner
+      -Dsonar.login=${sonar_login}
+      -Dsonar.projectName=${CI_PROJECT_NAMESPACE/\//_}_${CI_PROJECT_NAME}
+      -Dsonar.projectKey=${CI_PROJECT_NAMESPACE/\//_}_${CI_PROJECT_NAME}
+      -Dsonar.projectVersion=${CI_COMMIT_TAG}
+      -Dsonar.branch.name=${CI_COMMIT_REF_NAME}
+      -Dsonar.branch.target=dev
+      -Dsonar.sources=${CI_PROJECT_DIR}/${CI_PROJECT_NAME//-/_}
+      -Dsonar.tests=${CI_PROJECT_DIR}/tests
+      -Dsonar.python.pylint.reportPath=${CI_PROJECT_DIR}/pylint-reports/pylint-report.txt
+      -Dsonar.python.bandit.reportPaths=bandit-reports/bandit-report.json
+      -X
+  when: always
+  dependencies:
+    - python36
+    - pylint
+    - bandit
+  tags:
+    - shell
+  environment:
+    name: review/$CI_COMMIT_REF_SLUG
+    url: http://$CI_PROJECT_NAME-$CI_COMMIT_REF_SLUG.service.local:8080
+    on_stop: clean_sonarqube
+...
