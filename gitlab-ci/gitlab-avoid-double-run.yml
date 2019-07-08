@@ -1,0 +1,11 @@
+---
+# avoid double CI run per branch and avoid writing to cache if a newer pipeline is running
+before_script:
+  - '[ "${CI_COMMIT_REF_NAME}" = "${CI_COMMIT_TAG}" ] || (
+     [ "$(git rev-parse origin/$CI_COMMIT_REF_NAME)" != "$CI_COMMIT_SHA" ] && (
+     echo "A newer job is already running. Exiting..." && exit 0) || true)'
+after_script:
+  - '[ "${CI_COMMIT_REF_NAME}" = "${CI_COMMIT_TAG}" ] || (
+     [ "$(git rev-parse origin/$CI_COMMIT_REF_NAME)" != "$CI_COMMIT_SHA" ] && (
+     echo "A newer job is already running. Exiting..." && exit 0) || true)'
+...
