@@ -1,0 +1,48 @@
+---
+stages:
+  - docker_clean
+  - docker_build
+  - trigger_security
+
+clean:
+  stage: docker_clean
+  script:
+    - docker rmi $(docker images --filter "dangling=true" -q --no-trunc) || true
+  tags:
+    - build_docker
+  except:
+    - schedules
+
+build:tag:
+  stage: docker_build
+  variables:
+    http_proxy: http://myproxy.local:3128/
+    https_proxy: http://myproxy.local:3128/
+    no_proxy: local
+  script:
+    - git submodule update --init
+    - make build TARGET=centos7 VERSIONS=2.4
+    - docker tag $(docker images
+        --format "{{.ID}}"
+        --filter "label=name=centos/httpd-24-centos7" | head -1
+        ) harbor.local/poil/httpd24:${CI_COMMIT_TAG}
+    - docker push harbor.local/poil/httpd24:${CI_COMMIT_TAG}
+    - docker tag harbor.local/poil/httpd24:${CI_COMMIT_TAG} harbor.local/poil/httpd24:latest
+    - docker push harbor.local/poil/httpd24:latest
+  tags:
+    - build_docker
+  only:
+    refs:
+      - /^\d+\.\d+\.\d+(-\d+)?$/
+  except:
+    - schedules
+
+build:trigger:security:
+  stage: trigger_security
+  script:
+    - /usr/local/bin/gitlab-security-tag.sh "${CI_PROJECT_ID}" "${gitlab_token}" "poil" "httpd24"
+  tags:
+    - build_python
+  only:
+    - schedules
+...
