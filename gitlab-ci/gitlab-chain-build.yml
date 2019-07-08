@@ -1,0 +1,12 @@
+---
+trigger_dependent_projects:
+  stage: trigger_dependent_projects
+  script:
+    - curl --request POST
+      --form token=${target_project}
+      --form ref=dev ${CI_API_V4_URL}/projects/541/trigger/pipeline"
+  only:
+    - tags
+  tags:
+    - build_python
+...
