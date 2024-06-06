@@ -1,0 +1,3 @@
+MYSQL_HOST="target"
+MYSQL_USER="user"
+MYSQL_PASSWORD='xxxxxxxxxxx'

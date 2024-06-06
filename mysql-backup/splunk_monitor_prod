@@ -1,0 +1,7 @@
+SFX_URL=https://api.eu0.signalfx.com/v2/alertmuting
+DURATION=120  # in minutes
+TOKEN="xxxxxxxxxxxxxxxxxxx"
+
+# Muting properties
+HOST="localhost"
+DETECTOR_ID="xxxxxxx"

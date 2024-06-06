@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+
+GIT_SSH_COMMAND='ssh -i /home/bdupuis/.ssh/id_ed25519_auchan -o IdentitiesOnly=yes' git $*

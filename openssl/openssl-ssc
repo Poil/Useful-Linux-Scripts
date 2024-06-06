@@ -1,0 +1,6 @@
+openssl genrsa -out cadb.key 4096
+openssl req -x509 -new -nodes -key cadb.key -days 3650 -config openssl-ssc.cfg -out cadb.pem
+openssl genrsa -out certificate.key 4096
+openssl req -new -key certificate.key -out certificate.csr -config openssl-ssc.cfg
+openssl x509 -req -in certificate.csr -CA cadb.pem -CAkey cadb.key -CAcreateserial -out certificate.crt -days 365
+

@@ -1,0 +1,43 @@
+#!/bin/bash
+
+cfg=$(ssh -G $1)
+r_to=$1
+r_user=$(echo "$cfg" | awk '/^user / { print $2 }')
+r_hostname=$(echo "$cfg" | awk '/^hostname / { print $2 }')
+r_identity=$(echo "$cfg" | awk '/^identityfile / { print $2 }' | wc -l)
+
+[[ $1 =~ "@" ]] && r_ouser=${r_user} && r_user="${1%%@*}"
+
+case "$TERM" in
+  xterm*|rxvt*)
+    PROMPT_COMMAND='echo -ne "\033]0;${r_user}@${r_to}\007"'
+    # Show the currently running command in the terminal title:
+    # http://www.davidpashley.com/articles/xterm-titles-with-bash.html
+    show_command_in_title_bar() {
+      case "$BASH_COMMAND" in
+        *\033]0*)
+          # The command is trying to set the title bar as well;
+          # this is most likely the execution of $PROMPT_COMMAND.
+          # In any case nested escapes confuse the terminal, so don't
+          # output them.
+          ;;
+        *)
+          echo -ne "\033]0;${r_user}@${r_to}\007"
+        ;;
+      esac
+    }
+    trap show_command_in_title_bar DEBUG
+  ;;
+  *)
+  ;;
+esac
+
+if [[ $r_identity -eq 1 && -z ${r_ouser} ]]; then
+  ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -o GSSAPIAuthentication=no $*
+else
+  (keepass2 --auto-type)&
+  read -t 3 -s curpass
+  [[ $? -ne 0 ]] && read -p "No keepass reply, please enter password manually : " -s curpass
+
+  sshpass -f <(echo $curpass) ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -o GSSAPIAuthentication=no $*
+fi

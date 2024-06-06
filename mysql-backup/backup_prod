@@ -1,0 +1,5 @@
+MYSQL_HOST="localhost"
+MYSQL_USER="backup"
+MYSQL_PASSWORD='xxxxxxxxxxx'
+
+FS_SAS="xxxxxxxxxxxxxxxxxxxxxxxx"

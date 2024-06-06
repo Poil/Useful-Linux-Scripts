@@ -1,0 +1,5 @@
+#!/bin/bash
+
+[[ $# -ne 1 ]] && echo usage $(basename $0 mycustomer)
+
+az account list --output=json | jq '.[] | select(.name | match("'$1'"; "gi"))'

@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+
+CURRENT=$(pwd)
+BASECONF="conf"
+while [[ ! -d "${BASECONF}" ]]; do
+    BASECONF="../${BASECONF}"
+done
+
+PPATH=$(echo $BASECONF | grep -o "\.\./" | tr -d "\n")
+BASE="$(realpath ${CURRENT}/${PPATH})/"
+
+STACK_PATH=${CURRENT/${BASE}/}
+
+CONF=${BASECONF}/${STACK_PATH//\//_}.yml
+
+export AZURE_CONFIG_DIR=${BASECONF}/../.run/azure
+az $*

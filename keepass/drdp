@@ -1,0 +1,44 @@
+#/usr/bin/bash
+
+[[ $# -lt 1 ]] && echo "Usage $(basename $0) domain/login@host bastion" && exit 1
+
+r_user=${1%@*}
+r_hostname=${1#*@}
+
+[[ ! ${r_hostname} =~ ^[0-9] ]] && n_hostname=$(dig +short ${r_hostname}) || n_hostname=$r_hostname
+
+if [[ $# -eq 2 ]]; then
+  ssh -CfN -o "ControlMaster=auto" -o "ControlPersist=no" -o "ControlPath=~/.ssh/socks-%h" -D localhost:1080 $2
+  [[ $? -ne 0 ]] && echo "Error connecting to bastion" && exit 255
+fi
+
+case "$TERM" in
+  xterm*|rxvt*)
+    PROMPT_COMMAND='echo -ne "\033]0;${r_user}@${r_hostname}\007"'
+    # Show the currently running command in the terminal title:
+    # http://www.davidpashley.com/articles/xterm-titles-with-bash.html
+    show_command_in_title_bar() {
+      case "$BASH_COMMAND" in
+        *\033]0*)
+          # The command is trying to set the title bar as well;
+          # this is most likely the execution of $PROMPT_COMMAND.
+          # In any case nested escapes confuse the terminal, so don't
+          # output them.
+          ;;
+        *)
+          echo -ne "\033]0;${r_user}@${r_hostname}\007"
+        ;;
+      esac
+    }
+    trap show_command_in_title_bar DEBUG
+  ;;
+  *)
+  ;;
+esac
+
+
+(keepass2 --auto-type)&
+read -r -t 3 -s curpass
+[[ $? -ne 0 ]] && read -p "No keepass reply, please enter password manually : " -s curpass
+[[ $# -ge 2 ]] && nohup xfreerdp /u:"${r_user#*/}" /d:"${r_user%%/*}" /p:"${curpass}" /w:1680 /h:900 /proxy:socks5://localhost:1080 /v:${n_hostname} /cert-ignore /drive:/mnt +smart-sizing +clipboard /gfx:AVC444 /kbd:0x0000040C >/tmp/nohup.$$.out &
+[[ $# -lt 2 ]] && nohup xfreerdp /u:"${r_user#*/}" /d:"${r_user%%/*}" /p:"${curpass}" /w:1680 /h:900 /v:${n_hostname} /cert-ignore /drive:/mnt +smart-sizing +clipboard /gfx:AVC444 /kbd:0x0000040C >/tmp/nohup.$$.out &

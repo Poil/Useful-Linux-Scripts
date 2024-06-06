@@ -1,0 +1,5 @@
+alias azls='caz resource list -o tsv --query '\''[].{name:name,location:location,resourceGroup:resourceGroup,type:type}'\'''
+alias azmyid='az ad signed-in-user show --query id -o tsv'
+alias diffru='diff -x '\''.*'\'' -ru'
+alias gitrecreate='git switch --force-create master origin/main'
+

@@ -1,0 +1,5 @@
+DOM="$1"
+NAME=$2
+PORT="443"
+printf Q | openssl s_client -servername $NAME -connect $DOM:$PORT \
+| openssl x509 -noout -dates
