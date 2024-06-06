@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+
+[[ $# -ne 1 ]] && echo -e "Usage : \n  $(basename $0) e6d037f1-0f97-4be1-a6ee-5e17b1135574 \n  You can have ID via :\n  faz lvm | jq -r '. | \"\(.name) : \(.id)\"'" && exit 1
+
+az account set -s $1
+az ad user get-member-groups --id $(az ad signed-in-user show --output=json | jq -r .objectId)
